@@ -1487,7 +1487,7 @@ const S = {
   progBg:   { height:3, background:"#E2E8F0" },
   progFill: { height:"100%", background:"#1B4FD8", transition:"width 0.3s" },
   stepTabs: { display:"flex", overflowX:"auto", background:"#fff", borderBottom:"1px solid #E2E8F0", padding:"0 8px" },
-  stepTab:  { flexShrink:0, padding:"8px 10px", background:"none", border:"none", borderBottom:"2px solid transparent", fontSize:11, fontWeight:600, color:"#718096", cursor:"pointer", whiteSpace:"nowrap" },
+  stepTab:  { flexShrink:0, padding:"8px 10px", background:"none", border:"none", borderBottomWidth:2, borderBottomStyle:"solid", borderBottomColor:"transparent", fontSize:11, fontWeight:600, color:"#718096", cursor:"pointer", whiteSpace:"nowrap" },
   stepTabOn:{ color:"#1B4FD8", borderBottomColor:"#1B4FD8" },
   liveBanner:{ background:"#1B4FD8", color:"#fff", padding:"6px 14px", display:"flex", flexWrap:"wrap", gap:"4px 16px", fontSize:12 },
   main:     { maxWidth:640, margin:"0 auto" },

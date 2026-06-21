@@ -58,7 +58,7 @@ export function parseForm16(text) {
   ]);
   if (c80) fields.c80 = c80;
 
-  const name = text.match(/Name\s*(?:and\s*address\s*)?of\s*(?:the\s*)?Employee[\s\S]{0,60}?:?\s*([A-Z][A-Za-z .]{2,60})/i);
+  const name = text.match(/Name\s*(?:and\s*address\s*)?of\s*(?:the\s*)?Employee[\s\S]{0,60}?:?\s*([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z.]*){0,4})(?=\s+(?:PAN|TAN|Address|Employer|Designation|Father|DOB|Date|Assessment|Financial)\b|[:\n]|$)/i);
   if (name) fields.name = { value: name[1].trim(), raw: name[0].trim().slice(0, 140) };
 
   const pan = text.match(/PAN\s*(?:of\s*the\s*Employee)?\s*:?\s*([A-Z]{5}[0-9]{4}[A-Z])/i);
