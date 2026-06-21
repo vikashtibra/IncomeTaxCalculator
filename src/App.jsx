@@ -228,6 +228,7 @@ export default function App() {
   const [form16, setForm16] = useState(null); // { empIndex, fields, warnings, unreadable }
   const [encKey, setEncKey] = useState(null); // CryptoKey (DK), cloud mode only
   const [needsUnlock, setNeedsUnlock] = useState(false);
+  const [recovery, setRecovery] = useState(false); // PASSWORD_RECOVERY in progress
 
   const userToAuth = u => u && { id: u.id, email: u.email, name: u.user_metadata?.name || "" };
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(""), 2500); };
@@ -262,6 +263,25 @@ export default function App() {
     }
   };
 
+  // Re-wraps the Data Key (or generates a fresh one if none is unlocked) under a newly-derived password key.
+  const rewrapKeyForNewPassword = async (userId, newPassword) => {
+    let dk = encKey;
+    let lostOldData = false;
+    if (!dk) {
+      const cached = sessionStorage.getItem("enc_dk_"+userId);
+      if (cached) dk = await importDataKey(cached);
+    }
+    if (!dk) { dk = await generateDataKey(); lostOldData = true; }
+    const salt = randomB64();
+    const pk = await deriveKey(newPassword, salt);
+    const { wrapped, iv } = await wrapKey(dk, pk);
+    await supabase.from("user_keys").upsert({ user_id: userId, salt, wrapped_dk: wrapped, iv });
+    sessionStorage.setItem("enc_dk_"+userId, await exportKeyB64(dk));
+    setEncKey(dk);
+    setNeedsUnlock(false);
+    return lostOldData;
+  };
+
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -269,8 +289,9 @@ export default function App() {
       if (session?.user && getStorageMode(session.user.id) === "cloud") await unlockDataKey(session.user.id, null);
       setReady(true);
     })();
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       setAuth(userToAuth(session?.user));
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -318,6 +339,33 @@ export default function App() {
       if (!silent) showToast("Saved");
     } catch (e) {
       showToast("Save failed: " + (e && e.message ? e.message : "unknown error"));
+    }
+  };
+
+  const changePassword = async newPassword => {
+    if (!auth) return;
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      if (getStorageMode(auth.id) === "cloud") await rewrapKeyForNewPassword(auth.id, newPassword);
+      showToast("Password changed");
+    } catch (e) {
+      showToast("Couldn't change password: " + (e && e.message ? e.message : "unknown error"));
+    }
+  };
+
+  const submitRecoveryPassword = async newPassword => {
+    if (!auth) return;
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      const lostOldData = getStorageMode(auth.id) === "cloud" ? await rewrapKeyForNewPassword(auth.id, newPassword) : false;
+      setRecovery(false);
+      showToast(lostOldData
+        ? "Password reset. Old encrypted cloud data couldn't be recovered without the previous password - new saves will work normally."
+        : "Password reset - your data is still accessible.");
+    } catch (e) {
+      showToast("Couldn't reset password: " + (e && e.message ? e.message : "unknown error"));
     }
   };
 
@@ -461,7 +509,7 @@ export default function App() {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user && getStorageMode(session.user.id) === "cloud") await unlockDataKey(session.user.id, password);
   };
-  const P = { data, setF, setEmp, r, goNext, goPrev, goTo, auth, setAuth, saveSession, showToast, exportSession, setPasteModal, uploadForm16, onAuth, getStorageMode, setStorageMode, encKey, unlockDataKey };
+  const P = { data, setF, setEmp, r, goNext, goPrev, goTo, auth, setAuth, saveSession, showToast, exportSession, setPasteModal, uploadForm16, onAuth, getStorageMode, setStorageMode, encKey, unlockDataKey, changePassword };
 
   return (
     <div style={S.app}>
@@ -567,6 +615,10 @@ export default function App() {
           onLogout={async () => { await supabase.auth.signOut(); setNeedsUnlock(false); }}
         />
       )}
+
+      {recovery && (
+        <SetNewPasswordModal onSubmit={submitRecoveryPassword} />
+      )}
     </div>
   );
 }
@@ -636,6 +688,18 @@ function AuthScreen({ importSession, onAuth }) {
     }
   }
 
+  async function forgotPassword() {
+    setErr("");
+    if (!email.trim()) { setErr("Enter your email above first"); return; }
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+      if (error) { setErr(error.message); return; }
+      setErr("Password reset email sent - check your inbox.");
+    } catch (e) {
+      setErr("Couldn't send reset email: " + (e && e.message ? e.message : "please try again"));
+    }
+  }
+
   return (
     <Page title={mode==="login"?"Welcome Back":"Create Account"}>
       <div style={S.authBox}>
@@ -644,6 +708,11 @@ function AuthScreen({ importSession, onAuth }) {
         <FIn label="Password" type="password" value={pass} onChange={setPass} placeholder="Min. 6 characters" onEnter={submit} />
         {err && <div style={S.errBox}>{err}</div>}
         <button style={S.btnPri} onClick={submit}>{mode==="login"?"Sign In":"Create Account"}</button>
+        {mode==="login" && (
+          <div style={{textAlign:"center",marginTop:8}}>
+            <button style={S.linkBtn} onClick={forgotPassword}>Forgot password?</button>
+          </div>
+        )}
         <div style={{textAlign:"center",marginTop:12,fontSize:13,color:"#718096"}}>
           {mode==="login"?"New here?":"Have an account?"}
           <button style={S.linkBtn} onClick={()=>{setMode(m=>m==="login"?"register":"login");setErr("");}}>
@@ -682,7 +751,7 @@ function AuthScreen({ importSession, onAuth }) {
   );
 }
 
-function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast, saveSession, getStorageMode, setStorageMode }) {
+function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast, saveSession, getStorageMode, setStorageMode, changePassword }) {
   const pan = data.profile.pan;
   const ifsc = data.profile.ifsc;
   const panOk  = !pan  || /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan);
@@ -692,6 +761,16 @@ function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToa
     setStorageMode(auth.id, mode);
     showToast(mode==="cloud" ? "Switched to Cloud (encrypted) - reloading..." : "Switched to Local-only storage - reloading...");
     setTimeout(() => window.location.reload(), 800);
+  };
+  const [newPass, setNewPass] = useState("");
+  const [newPass2, setNewPass2] = useState("");
+  const [passErr, setPassErr] = useState("");
+  const submitChangePassword = async () => {
+    setPassErr("");
+    if (newPass.length < 6) { setPassErr("Password must be 6+ characters"); return; }
+    if (newPass !== newPass2) { setPassErr("Passwords don't match"); return; }
+    await changePassword(newPass);
+    setNewPass(""); setNewPass2("");
   };
   return (
     <Page title="Profile">
@@ -726,6 +805,13 @@ function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToa
             Cloud mode: your data is encrypted in this browser with a key derived from your password before it's ever sent to the server - even a compromised database or Supabase account can't read it without your password. On a new browser/tab you'll be asked for your password once to unlock it.
           </p>
         )}
+      </Card>
+      <Card title="Change Password">
+        <FIn label="New Password" type="password" value={newPass} onChange={setNewPass} placeholder="Min. 6 characters" />
+        <FIn label="Confirm New Password" type="password" value={newPass2} onChange={setNewPass2} placeholder="Re-enter password" onEnter={submitChangePassword} />
+        {passErr && <div style={S.errBox}>{passErr}</div>}
+        <button style={{...S.btnSec,fontSize:13}} onClick={submitChangePassword}>Change Password</button>
+        {storageMode==="cloud" && <p style={{fontSize:11,color:"#94a3b8",margin:"4px 0 0"}}>Your encrypted cloud data stays accessible after this - the encryption key is re-secured with your new password automatically.</p>}
       </Card>
       <Card title="Offline Backup">
         <p style={{fontSize:12,color:"#718096",margin:"0 0 10px"}}>
@@ -1248,6 +1334,44 @@ function UnlockModal({ onSubmit, onLogout }) {
             {busy?"Unlocking...":"Unlock"}
           </button>
           <button style={{flex:1,background:"#F1F5F9",color:"#718096",border:"1px solid #E2E8F0",borderRadius:10,padding:"11px 4px",fontWeight:600,fontSize:11,cursor:"pointer"}} onClick={onLogout}>Logout</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SetNewPasswordModal({ onSubmit }) {
+  const [pass, setPass]   = useState("");
+  const [pass2, setPass2] = useState("");
+  const [err, setErr]     = useState("");
+  const [busy, setBusy]   = useState(false);
+  const submit = async () => {
+    setErr("");
+    if (pass.length < 6) { setErr("Password must be 6+ characters"); return; }
+    if (pass !== pass2)  { setErr("Passwords don't match"); return; }
+    setBusy(true);
+    await onSubmit(pass);
+    setBusy(false);
+  };
+  return (
+    <div style={S.overlay}>
+      <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px 10px",borderBottom:"1px solid #E2E8F0"}}>
+          <div style={{fontWeight:800,fontSize:15}}>Set a New Password</div>
+        </div>
+        <div style={{padding:"10px 14px",background:"#EFF6FF",borderBottom:"1px solid #BFDBFE",fontSize:12,color:"#1D4ED8",lineHeight:1.6}}>
+          If you're in the same browser where you were last logged in, your encrypted cloud data will be preserved automatically. If not, it may be unrecoverable - new saves will still work fine.
+        </div>
+        <div style={{padding:"14px"}}>
+          <FIn label="New Password" type="password" value={pass} onChange={setPass} placeholder="Min. 6 characters" />
+          <FIn label="Confirm New Password" type="password" value={pass2} onChange={setPass2} placeholder="Re-enter password" onEnter={submit} />
+          {err && <div style={S.errBox}>{err}</div>}
+        </div>
+        <div style={{display:"flex",gap:8,padding:"10px 14px",borderTop:"1px solid #E2E8F0"}}>
+          <button style={{flex:1,background:"#1B4FD8",color:"#fff",border:"none",borderRadius:10,padding:"11px 8px",fontWeight:700,fontSize:13,cursor:"pointer"}}
+            onClick={submit} disabled={busy}>
+            {busy?"Setting...":"Set New Password"}
+          </button>
         </div>
       </div>
     </div>
