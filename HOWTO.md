@@ -83,7 +83,8 @@ If you change env vars after the first deploy, trigger a **Redeploy** — they'r
 
 ```bash
 npm run lint
+npm run test    # Vitest - tax engine (src/lib/taxEngine.js) unit tests
 npm run build
 ```
 
-There is no automated test suite. Verify changes by running the app (`npm run dev`) and exercising the affected flow in a browser.
+All three run in CI (`.github/workflows/ci.yml`) on every push/PR to `main`. The test suite only covers the pure tax-computation functions (`slabTax`/`calcRegime`/`compute`) — UI screens, Supabase auth, encryption, and Form 16 parsing have no automated tests. Verify those by running the app (`npm run dev`) and exercising the affected flow in a browser.

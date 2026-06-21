@@ -156,8 +156,9 @@ Nothing is uploaded anywhere — extraction and parsing are entirely client-side
 
 ## 8. Known Limitations
 
-- Single-file frontend (`src/App.jsx`, 1500+ lines) — works for the current scope but will need splitting if the screen count or team grows.
-- No automated test suite (see `HOWTO.md` §7) — verification is manual, run-the-app based.
+- Single-file frontend (`src/App.jsx`, 1500+ lines) — works for the current scope but will need splitting if the screen count or team grows. The tax engine itself was extracted to `src/lib/taxEngine.js` (no side-effecting imports) specifically so it could be unit-tested in isolation.
+- Tax engine (`src/lib/taxEngine.js`) has a Vitest suite (`npm run test`, run in CI) covering slabs/rebate/surcharge/cess/deductions/capital gains/ITR-form logic. UI screens and Supabase/encryption flows are still manual/run-the-app verified only.
+- Capital losses can't be entered — `pn()` clamps all numeric input to non-negative, so the Sec 70-74 set-off logic in `compute()` is unreachable dead code (found via the test suite; documented in `ITR_RULES_COVERED.md`).
 - Bundle size is large (~880KB main + ~1.2MB Form-16 PDF worker, lazy-loaded) due to `pdfjs-dist`; acceptable for a low-traffic personal tool, would need code-splitting at scale.
 - No relational decomposition of tax data — the entire form state is one JSON blob per user, which is fine for single-user-owns-all-their-data access patterns but would block any cross-record querying/reporting feature.
 - Form 16 field extraction is best-effort regex, not a general PDF-form parser; degrades gracefully (blank fields) rather than crashing, but accuracy depends on each employer's PDF layout.

@@ -1,6 +1,6 @@
 # ITR Rules Covered (FY 2025-26 / AY 2026-27)
 
-This document mirrors exactly what the tax engine (`compute()` / `calcRegime()` in [src/App.jsx](src/App.jsx)) implements — not a general summary of Indian tax law. If a rule isn't listed here, the calculator doesn't account for it.
+This document mirrors exactly what the tax engine (`compute()` / `calcRegime()` in [src/lib/taxEngine.js](src/lib/taxEngine.js)) implements — not a general summary of Indian tax law. If a rule isn't listed here, the calculator doesn't account for it.
 
 **Scope:** Resident Individuals only. Excludes NRIs, HUFs, foreign assets/income, Crypto/VDA, companies, LLPs.
 
@@ -14,15 +14,16 @@ This document mirrors exactly what the tax engine (`compute()` / `calcRegime()` 
 | 5,00,001 – 10,00,000 | 20% |
 | Above 10,00,000 | 30% |
 
-**New Regime**
+**New Regime** (Budget 2025 slabs)
 | Income | Rate |
 |---|---|
-| 0 – 3,00,000 | 0% |
-| 3,00,001 – 7,00,000 | 5% |
-| 7,00,001 – 10,00,000 | 10% |
-| 10,00,001 – 12,00,000 | 15% |
-| 12,00,001 – 15,00,000 | 20% |
-| Above 15,00,000 | 30% |
+| 0 – 4,00,000 | 0% |
+| 4,00,001 – 8,00,000 | 5% |
+| 8,00,001 – 12,00,000 | 10% |
+| 12,00,001 – 16,00,000 | 15% |
+| 16,00,001 – 20,00,000 | 20% |
+| 20,00,001 – 24,00,000 | 25% |
+| Above 24,00,000 | 30% |
 
 ## Rebate (Section 87A)
 
@@ -66,7 +67,7 @@ This document mirrors exactly what the tax engine (`compute()` / `calcRegime()` 
 - **Debt Mutual Fund / Bond Fund gains** (post-April 2023): added to total income, taxed at slab rate
 - 4% cess applied on the special-rate capital gains tax (LTCG/STCG equity + LTCG other); slab-taxed components get cess as part of the regular computation
 - Capital gains tax is identical under both regimes (added to both Old and New totals equally)
-- Loss set-off: negative STCG-equity first offsets LTCG-equity (Sec 70-74); resulting LTCG floored at 0
+- Loss set-off (Sec 70-74): the code contains logic to offset a negative STCG-equity value against LTCG-equity, but it's currently **unreachable** — every numeric input is parsed through a helper that clamps to non-negative, so a capital loss can never actually be entered. This is a known gap, not a working feature; capital losses aren't supported yet.
 
 ## Business / Professional Income (Presumptive)
 
@@ -120,3 +121,4 @@ Old vs New total tax (including capital gains tax, identical in both) are compar
 - Statutory caps on Gratuity/Leave Encashment/LTA exemptions (user-entered, not auto-validated)
 - AMT, MAT, or other alternate minimum tax regimes
 - TDS/AIS reconciliation (the app tells you to verify against Form 26AS/AIS yourself)
+- Capital losses / loss set-off (Sec 70-74) — all numeric inputs are clamped to non-negative, so a loss can't currently be entered even though dead code exists for offsetting it
