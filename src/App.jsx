@@ -583,7 +583,7 @@ export default function App() {
           {stepIdx<=2
             ? <span style={{ ...S.navBtn, background:"transparent", visibility:"hidden" }}>Back</span>
             : <button style={S.navBtn} onClick={goPrev}>Back</button>}
-          <span style={S.navLabel} title={stepIdx<=2 ? "You're on the first step - nothing to go back to" : undefined}>{STEPS[stepIdx]?.label}</span>
+          <span style={S.navLabel}>{STEPS[stepIdx]?.label}</span>
           <button style={{ ...S.navBtn, background:"#1B4FD8", color:"#fff" }} onClick={goNext} disabled={stepIdx>=STEPS.length-1}>
             {stepIdx>=STEPS.length-1?"Done":"Next"}
           </button>
