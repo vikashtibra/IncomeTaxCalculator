@@ -518,7 +518,8 @@ export default function App() {
       <header style={S.header}>
         <div style={S.hL}>
           {!isAuthStep && (
-            <button style={S.menuBtn} onClick={() => setStep(step)}>
+            <button style={S.menuBtn} onClick={() => setStep(step)}
+              title={stepIdx<=2 ? "You're on the first step - use the tabs above to navigate" : undefined}>
               <span style={{ fontSize:18 }}>{STEPS[stepIdx]?.label || "Menu"}</span>
             </button>
           )}
@@ -537,6 +538,11 @@ export default function App() {
               <button style={S.hBtn} onClick={() => saveSession()}>Save</button>
               <button style={S.hBtn} onClick={exportSession}>Backup</button>
               <button style={S.hBtn} onClick={() => setPasteModal("import")}>Restore</button>
+              <button style={{...S.hBtn,color:"#dc2626",background:"#FEF2F2",borderColor:"#FECACA"}} onClick={async()=>{
+                await saveSession(data, true);
+                await supabase.auth.signOut();
+                showToast("Logged out");
+              }}>Logout</button>
               <div style={S.avatar}>{(auth.name||auth.email)[0].toUpperCase()}</div>
             </>
           )}
@@ -557,9 +563,9 @@ export default function App() {
           </div>
           <div style={S.liveBanner}>
             <span>Income: <b>{fmt(r.gtiOld)}</b></span>
-            <span>Old: <b style={{color:r.rec==="old"?"#16a34a":"#dc2626"}}>{fmt(r.oldTotal)}</b></span>
-            <span>New: <b style={{color:r.rec==="new"?"#16a34a":"#dc2626"}}>{fmt(r.newTotal)}</b></span>
-            <span style={{color:"#16a34a",fontWeight:700}}>{r.rec.toUpperCase()} saves {fmt(r.saving)}</span>
+            <span>Old: {r.rec==="old" ? <b style={S.bannerChip}>{fmt(r.oldTotal)}</b> : <b style={{color:"#dc2626"}}>{fmt(r.oldTotal)}</b>}</span>
+            <span>New: {r.rec==="new" ? <b style={S.bannerChip}>{fmt(r.newTotal)}</b> : <b style={{color:"#dc2626"}}>{fmt(r.newTotal)}</b>}</span>
+            <span style={S.bannerChip}>{r.rec.toUpperCase()} saves {fmt(r.saving)}</span>
           </div>
         </>
       )}
@@ -580,7 +586,9 @@ export default function App() {
 
       {!isAuthStep && (
         <nav style={S.botNav}>
-          <button style={{ ...S.navBtn, opacity:stepIdx<=2?0.3:1 }} disabled={stepIdx<=2} onClick={goPrev}>Back</button>
+          {stepIdx<=2
+            ? <span style={{ ...S.navBtn, background:"transparent", visibility:"hidden" }}>Back</span>
+            : <button style={S.navBtn} onClick={goPrev}>Back</button>}
           <span style={S.navLabel}>{STEPS[stepIdx]?.label}</span>
           <button style={{ ...S.navBtn, background:"#1B4FD8", color:"#fff" }} onClick={goNext} disabled={stepIdx>=STEPS.length-1}>
             {stepIdx>=STEPS.length-1?"Done":"Next"}
@@ -751,7 +759,7 @@ function AuthScreen({ importSession, onAuth }) {
   );
 }
 
-function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast, saveSession, getStorageMode, setStorageMode, changePassword }) {
+function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast, getStorageMode, setStorageMode, changePassword }) {
   const pan = data.profile.pan;
   const ifsc = data.profile.ifsc;
   const panOk  = !pan  || /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan);
@@ -822,13 +830,6 @@ function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToa
           <button style={{...S.btnSec,flex:1,fontSize:13}} onClick={()=>setPasteModal("import")}>Restore from File</button>
         </div>
       </Card>
-      {auth && (
-        <button style={{...S.btnSec,color:"#dc2626",borderColor:"#FECACA"}} onClick={async()=>{
-          await saveSession(data, true);
-          await supabase.auth.signOut();
-          showToast("Logged out");
-        }}>Logout</button>
-      )}
       <Info>Resident Individuals only. NRIs, HUFs, foreign income and Crypto are excluded.</Info>
     </Page>
   );
@@ -1489,7 +1490,8 @@ const S = {
   stepTabs: { display:"flex", overflowX:"auto", background:"#fff", borderBottom:"1px solid #E2E8F0", padding:"0 8px" },
   stepTab:  { flexShrink:0, padding:"8px 10px", background:"none", border:"none", borderBottomWidth:2, borderBottomStyle:"solid", borderBottomColor:"transparent", fontSize:11, fontWeight:600, color:"#718096", cursor:"pointer", whiteSpace:"nowrap" },
   stepTabOn:{ color:"#1B4FD8", borderBottomColor:"#1B4FD8" },
-  liveBanner:{ background:"#1B4FD8", color:"#fff", padding:"6px 14px", display:"flex", flexWrap:"wrap", gap:"4px 16px", fontSize:12 },
+  liveBanner:{ background:"#1B4FD8", color:"#fff", padding:"6px 14px", display:"flex", flexWrap:"wrap", gap:"4px 16px", fontSize:12, alignItems:"center" },
+  bannerChip:{ background:"#fff", color:"#16a34a", fontWeight:700, padding:"1px 8px", borderRadius:10, display:"inline-block" },
   main:     { maxWidth:640, margin:"0 auto" },
   botNav:   { position:"fixed", bottom:0, left:0, right:0, background:"#fff", borderTop:"1px solid #E2E8F0", padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", zIndex:100 },
   navBtn:   { background:"#1e293b", color:"#fff", border:"none", borderRadius:10, padding:"10px 18px", fontWeight:700, fontSize:14, cursor:"pointer" },
