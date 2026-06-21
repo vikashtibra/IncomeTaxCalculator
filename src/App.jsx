@@ -518,8 +518,7 @@ export default function App() {
       <header style={S.header}>
         <div style={S.hL}>
           {!isAuthStep && (
-            <button style={S.menuBtn} onClick={() => setStep(step)}
-              title={stepIdx<=2 ? "You're on the first step - use the tabs above to navigate" : undefined}>
+            <button style={S.menuBtn} onClick={() => setStep(step)}>
               <span style={{ fontSize:18 }}>{STEPS[stepIdx]?.label || "Menu"}</span>
             </button>
           )}
@@ -536,8 +535,8 @@ export default function App() {
           {auth && !isAuthStep && (
             <>
               <button style={S.hBtn} onClick={() => saveSession()}>Save</button>
-              <button style={S.hBtn} onClick={exportSession}>Backup</button>
-              <button style={S.hBtn} onClick={() => setPasteModal("import")}>Restore</button>
+              <button style={S.hBtn} onClick={exportSession} title="Copy a JSON snapshot of your data for your own records">Backup</button>
+              <button style={S.hBtn} onClick={() => setPasteModal("import")} title="Paste a previously saved backup JSON to restore your data">Restore</button>
               <button style={{...S.hBtn,color:"#dc2626",background:"#FEF2F2",borderColor:"#FECACA"}} onClick={async()=>{
                 await saveSession(data, true);
                 await supabase.auth.signOut();
@@ -563,8 +562,8 @@ export default function App() {
           </div>
           <div style={S.liveBanner}>
             <span>Income: <b>{fmt(r.gtiOld)}</b></span>
-            <span>Old: {r.rec==="old" ? <b style={S.bannerChip}>{fmt(r.oldTotal)}</b> : <b style={{color:"#dc2626"}}>{fmt(r.oldTotal)}</b>}</span>
-            <span>New: {r.rec==="new" ? <b style={S.bannerChip}>{fmt(r.newTotal)}</b> : <b style={{color:"#dc2626"}}>{fmt(r.newTotal)}</b>}</span>
+            <span>Old: <b style={r.rec==="old" ? S.bannerChip : S.bannerChipRed}>{fmt(r.oldTotal)}</b></span>
+            <span>New: <b style={r.rec==="new" ? S.bannerChip : S.bannerChipRed}>{fmt(r.newTotal)}</b></span>
             <span style={S.bannerChip}>{r.rec.toUpperCase()} saves {fmt(r.saving)}</span>
           </div>
         </>
@@ -589,7 +588,7 @@ export default function App() {
           {stepIdx<=2
             ? <span style={{ ...S.navBtn, background:"transparent", visibility:"hidden" }}>Back</span>
             : <button style={S.navBtn} onClick={goPrev}>Back</button>}
-          <span style={S.navLabel}>{STEPS[stepIdx]?.label}</span>
+          <span style={S.navLabel} title={stepIdx<=2 ? "You're on the first step - nothing to go back to" : undefined}>{STEPS[stepIdx]?.label}</span>
           <button style={{ ...S.navBtn, background:"#1B4FD8", color:"#fff" }} onClick={goNext} disabled={stepIdx>=STEPS.length-1}>
             {stepIdx>=STEPS.length-1?"Done":"Next"}
           </button>
@@ -759,7 +758,7 @@ function AuthScreen({ importSession, onAuth }) {
   );
 }
 
-function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast, getStorageMode, setStorageMode, changePassword }) {
+function ProfileScreen({ data, setF, auth, showToast, getStorageMode, setStorageMode, changePassword }) {
   const pan = data.profile.pan;
   const ifsc = data.profile.ifsc;
   const panOk  = !pan  || /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan);
@@ -820,15 +819,6 @@ function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToa
         {passErr && <div style={S.errBox}>{passErr}</div>}
         <button style={{...S.btnSec,fontSize:13}} onClick={submitChangePassword}>Change Password</button>
         {storageMode==="cloud" && <p style={{fontSize:11,color:"#94a3b8",margin:"4px 0 0"}}>Your encrypted cloud data stays accessible after this - the encryption key is re-secured with your new password automatically.</p>}
-      </Card>
-      <Card title="Offline Backup">
-        <p style={{fontSize:12,color:"#718096",margin:"0 0 10px"}}>
-          Your data already syncs to your account automatically - this is just for keeping your own copy. Click Backup to copy a JSON snapshot you can save as a file or note for your own records (e.g. in case you ever lose account access). To bring it back in later, log in to this account and click Restore.
-        </p>
-        <div style={{display:"flex",gap:8}}>
-          <button style={{...S.btnPri,flex:1,fontSize:13}} onClick={exportSession}>Backup to File</button>
-          <button style={{...S.btnSec,flex:1,fontSize:13}} onClick={()=>setPasteModal("import")}>Restore from File</button>
-        </div>
       </Card>
       <Info>Resident Individuals only. NRIs, HUFs, foreign income and Crypto are excluded.</Info>
     </Page>
@@ -1492,6 +1482,7 @@ const S = {
   stepTabOn:{ color:"#1B4FD8", borderBottomColor:"#1B4FD8" },
   liveBanner:{ background:"#1B4FD8", color:"#fff", padding:"6px 14px", display:"flex", flexWrap:"wrap", gap:"4px 16px", fontSize:12, alignItems:"center" },
   bannerChip:{ background:"#fff", color:"#16a34a", fontWeight:700, padding:"1px 8px", borderRadius:10, display:"inline-block" },
+  bannerChipRed:{ background:"#fff", color:"#dc2626", fontWeight:700, padding:"1px 8px", borderRadius:10, display:"inline-block" },
   main:     { maxWidth:640, margin:"0 auto" },
   botNav:   { position:"fixed", bottom:0, left:0, right:0, background:"#fff", borderTop:"1px solid #E2E8F0", padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", zIndex:100 },
   navBtn:   { background:"#1e293b", color:"#fff", border:"none", borderRadius:10, padding:"10px 18px", fontWeight:700, fontSize:14, cursor:"pointer" },
