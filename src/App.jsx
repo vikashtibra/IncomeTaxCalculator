@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
+import { extractPdfText, parseForm16 } from "./lib/parseForm16";
 
 // -- TAX ENGINE FY 2025-26 / AY 2026-27 -------------------------------------
 const OLD_SLABS = [
@@ -223,6 +224,7 @@ export default function App() {
   const [toast, setToast]   = useState("");
   const [modal, setModal]   = useState(null); // { type, title, content }
   const [pasteModal, setPasteModal] = useState(false);
+  const [form16, setForm16] = useState(null); // { empIndex, fields, warnings, unreadable }
 
   const userToAuth = u => u && { id: u.id, email: u.email, name: u.user_metadata?.name || "" };
 
@@ -251,17 +253,46 @@ export default function App() {
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
-  const saveSession = async d => {
+  const saveSession = async (d, silent) => {
     if (!auth) return;
     try {
       const { error } = await supabase.from("tax_data").upsert({
         user_id: auth.id, data: d || data, updated_at: new Date().toISOString(),
       });
       if (error) throw error;
-      showToast("Saved");
+      if (!silent) showToast("Saved");
     } catch (e) {
       showToast("Save failed: " + (e && e.message ? e.message : "unknown error"));
     }
+  };
+
+  const uploadForm16 = async (file, empIndex) => {
+    try {
+      const text = await extractPdfText(file);
+      const parsed = parseForm16(text);
+      if (parsed.unreadable) {
+        showToast("Couldn't read text from this PDF - it may be a scanned image. Please enter values manually.");
+        return;
+      }
+      setForm16({ empIndex, ...parsed });
+    } catch (e) {
+      showToast("Couldn't read this PDF: " + (e && e.message ? e.message : "unknown error"));
+    }
+  };
+
+  const applyForm16 = (empIndex, values) => {
+    if (values.gross !== undefined) setEmp(empIndex, "gross", values.gross);
+    if (values.hra !== undefined)   setEmp(empIndex, "hra", values.hra);
+    if (values.tds !== undefined)   setEmp(empIndex, "tds", values.tds);
+    if (values.c80 !== undefined) {
+      const added = pn(values.c80);
+      setF("ded.c80", String(pn(data.ded.c80) + added));
+      setForm16(null);
+      showToast(`Added Rs.${added.toLocaleString("en-IN")} to 80C (now combined across employers) - recheck the total on the Deductions step before filing.`);
+      return;
+    }
+    setForm16(null);
+    showToast("Form 16 values applied - please review");
   };
 
   const setF = (path, val) => setData(prev => {
@@ -282,9 +313,9 @@ export default function App() {
   const r = compute(data);
 
   const stepIdx = STEPS.findIndex(s => s.id === step);
-  const goNext  = () => { const i = STEPS.findIndex(s=>s.id===step); if (i<STEPS.length-1) setStep(STEPS[i+1].id); };
+  const goNext  = () => { const i = STEPS.findIndex(s=>s.id===step); if (i<STEPS.length-1) setStep(STEPS[i+1].id); saveSession(data, true); };
   const goPrev  = () => { const i = STEPS.findIndex(s=>s.id===step); if (i>0) setStep(STEPS[i-1].id); };
-  const goTo    = id  => setStep(id);
+  const goTo    = id  => { setStep(id); saveSession(data, true); };
 
   const exportSession = () => {
     const session = { _type:"TaxFilerIndia_Session", _v:"2.0", _at:new Date().toISOString(), _user:auth, data };
@@ -371,7 +402,7 @@ export default function App() {
   if (!ready) return <Loading />;
 
   const isAuthStep = step === "tos" || step === "auth";
-  const P = { data, setF, setEmp, r, goNext, goPrev, goTo, auth, setAuth, saveSession, showToast, exportSession, setPasteModal };
+  const P = { data, setF, setEmp, r, goNext, goPrev, goTo, auth, setAuth, saveSession, showToast, exportSession, setPasteModal, uploadForm16 };
 
   return (
     <div style={S.app}>
@@ -460,6 +491,14 @@ export default function App() {
           hint="Open your backup .json in Notepad, select all (Ctrl+A), copy (Ctrl+C), paste here"
           onClose={() => setPasteModal(false)}
           onSubmit={text => { if (importSession(text)) setPasteModal(false); }}
+        />
+      )}
+
+      {form16 && (
+        <Form16ReviewModal
+          form16={form16}
+          onClose={() => setForm16(null)}
+          onApply={values => applyForm16(form16.empIndex, values)}
         />
       )}
     </div>
@@ -576,7 +615,7 @@ function AuthScreen({ importSession }) {
   );
 }
 
-function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast }) {
+function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast, saveSession }) {
   const pan = data.profile.pan;
   const ifsc = data.profile.ifsc;
   const panOk  = !pan  || /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan);
@@ -613,6 +652,7 @@ function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToa
       </Card>
       {auth && (
         <button style={{...S.btnSec,color:"#dc2626",borderColor:"#FECACA"}} onClick={async()=>{
+          await saveSession(data, true);
           await supabase.auth.signOut();
           showToast("Logged out");
         }}>Logout</button>
@@ -622,14 +662,20 @@ function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToa
   );
 }
 
-function SalaryScreen({ data, setF, setEmp, r }) {
+function SalaryScreen({ data, setF, setEmp, r, uploadForm16 }) {
   const addEmp    = () => setF("employers", [...data.employers, mkEmp()]);
   const removeEmp = i => setF("employers", data.employers.filter((_,j)=>j!==i));
+  const fileRefs  = {};
   return (
     <Page title="Salary Income">
       {data.employers.map((emp,i) => (
         <Card key={i} title={"Employer "+(i+1)+(emp.name?" - "+emp.name:"")} onRemove={i>0?()=>removeEmp(i):null}>
           <FIn label="Company Name" value={emp.name} onChange={v=>setEmp(i,"name",v)} placeholder="ABC Pvt Ltd" />
+          <input ref={el=>fileRefs[i]=el} type="file" accept="application/pdf" style={{display:"none"}}
+            onChange={e=>{ const f=e.target.files[0]; if (f) uploadForm16(f, i); e.target.value=""; }} />
+          <button style={{...S.btnSec,marginBottom:12,fontSize:12,padding:"8px"}} onClick={()=>fileRefs[i].click()}>
+            Upload Form 16 (PDF) to auto-fill
+          </button>
           <Row2>
             <FIn label="Gross Salary (Annual)" type="number" value={emp.gross} onChange={v=>setEmp(i,"gross",v)} placeholder="1200000" mono />
             <FIn label="Basic Salary (Annual)" type="number" value={emp.basic} onChange={v=>setEmp(i,"basic",v)} placeholder="600000" mono />
@@ -1029,6 +1075,60 @@ function CopyModal({ title, content, onClose }) {
             {copied?"Copied!":"Copy to Clipboard"}
           </button>
           <button style={{flex:1,background:"#F1F5F9",color:"#718096",border:"1px solid #E2E8F0",borderRadius:10,padding:"11px 4px",fontWeight:600,fontSize:11,cursor:"pointer"}} onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const FORM16_LABELS = {
+  gross: "Gross Salary",
+  hra:   "House Rent Allowance",
+  tds:   "Total TDS",
+  c80:   "80C Deduction",
+};
+
+function Form16ReviewModal({ form16, onClose, onApply }) {
+  const [vals, setVals] = useState(() => {
+    const v = {};
+    Object.entries(form16.fields).forEach(([k, f]) => { if (typeof f.value === "number") v[k] = String(f.value); });
+    return v;
+  });
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px 10px",borderBottom:"1px solid #E2E8F0"}}>
+          <div style={{fontWeight:800,fontSize:15}}>Review Form 16 Values</div>
+          <button style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#718096"}} onClick={onClose}>x</button>
+        </div>
+        <div style={{padding:"10px 14px",background:"#EFF6FF",borderBottom:"1px solid #BFDBFE",fontSize:12,color:"#1D4ED8",lineHeight:1.6}}>
+          Review and edit before applying - PDF layouts vary, so double-check against your actual Form 16.
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"12px 14px"}}>
+          {Object.keys(FORM16_LABELS).filter(k=>vals[k]!==undefined).map(k => (
+            <div key={k} style={{marginBottom:10}}>
+              <FIn label={k==="c80" ? FORM16_LABELS[k]+" (will be added to existing 80C total)" : FORM16_LABELS[k]} type="number" mono
+                value={vals[k]} onChange={v=>setVals(p=>({...p,[k]:v}))} />
+              {form16.fields[k] && <div style={{fontSize:11,color:"#94a3b8",marginTop:-8,marginBottom:4}}>Found in: "{form16.fields[k].raw}"</div>}
+            </div>
+          ))}
+          {Object.keys(vals).length===0 && (
+            <div style={{fontSize:12,color:"#718096"}}>No recognizable fields found in this PDF. Please enter values manually.</div>
+          )}
+          {form16.fields.name && <div style={{fontSize:12,color:"#718096",marginBottom:6}}>Detected employee name: <b>{form16.fields.name.value}</b></div>}
+          {form16.fields.pan && <div style={{fontSize:12,color:"#718096",marginBottom:6}}>Detected PAN: <b>{form16.fields.pan.value}</b></div>}
+          {form16.warnings.map((w,i)=>(<Warn key={i}>{w}</Warn>))}
+        </div>
+        <div style={{display:"flex",gap:8,padding:"10px 14px",borderTop:"1px solid #E2E8F0"}}>
+          <button style={{flex:2,background:"#16A34A",color:"#fff",border:"none",borderRadius:10,padding:"11px 8px",fontWeight:700,fontSize:13,cursor:"pointer"}}
+            onClick={()=>{
+              const out = {};
+              Object.entries(vals).forEach(([k,v]) => { if (v!=="") out[k]=v; });
+              onApply(out);
+            }}>
+            Apply to Salary
+          </button>
+          <button style={{flex:1,background:"#F1F5F9",color:"#718096",border:"1px solid #E2E8F0",borderRadius:10,padding:"11px 4px",fontWeight:600,fontSize:11,cursor:"pointer"}} onClick={onClose}>Cancel</button>
         </div>
       </div>
     </div>
