@@ -517,11 +517,6 @@ export default function App() {
 
       <header style={S.header}>
         <div style={S.hL}>
-          {!isAuthStep && (
-            <button style={S.menuBtn} onClick={() => setStep(step)}>
-              <span style={{ fontSize:18 }}>{STEPS[stepIdx]?.label || "Menu"}</span>
-            </button>
-          )}
           <div style={S.brand}>
             <div style={S.logo}>Rs</div>
             <div>
@@ -1467,7 +1462,6 @@ const S = {
   header:   { background:"#fff", borderBottom:"1px solid #E2E8F0", padding:"10px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100 },
   hL:       { display:"flex", alignItems:"center", gap:10 },
   hR:       { display:"flex", alignItems:"center", gap:6 },
-  menuBtn:  { background:"none", border:"none", cursor:"pointer", padding:"4px 6px", fontSize:13, fontWeight:600, color:"#718096" },
   brand:    { display:"flex", alignItems:"center", gap:8 },
   logo:     { width:32, height:32, background:"#1B4FD8", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:800, fontSize:12, flexShrink:0 },
   brandName:{ fontWeight:800, fontSize:14, color:"#1A202C", lineHeight:1.2 },
