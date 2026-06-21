@@ -87,7 +87,7 @@ function compute(d) {
 
   // House property
   const loanInt = pn(d.house.loanInt);
-  let hpOld = 0, hpNew = 0;
+  let hpOld, hpNew;
   if (d.house.selfOccupied) {
     hpOld = -Math.min(loanInt, 200000);
     hpNew = 0;
@@ -303,7 +303,7 @@ export default function App() {
       if (mode === "local") {
         try {
           const raw = localStorage.getItem("itr_data_"+auth.id);
-          if (raw) setData(prev => ({ ...mkState(), ...JSON.parse(raw) }));
+          if (raw) setData({ ...mkState(), ...JSON.parse(raw) });
         } catch { /* no saved data yet */ }
         setStep("profile");
         return;
@@ -313,7 +313,7 @@ export default function App() {
         const { data: row } = await supabase.from("tax_data").select("data").eq("user_id", auth.id).maybeSingle();
         if (row && row.data) {
           const payload = row.data.iv ? await decryptJSON(encKey, row.data) : row.data; // legacy plaintext fallback
-          setData(prev => ({ ...mkState(), ...payload }));
+          setData({ ...mkState(), ...payload });
         }
       } catch (e) {
         showToast("Couldn't decrypt saved data: " + (e && e.message ? e.message : "unknown error"));
@@ -1048,12 +1048,9 @@ function TDSScreen({ data, setF, r }) {
   );
 }
 
-function ResultsScreen({ r, data, setModal, buildReport, buildJSON, exportSession, setPasteModal, goTo }) {
+function ResultsScreen({ r, data, setModal, buildReport, buildJSON }) {
   const [tab, setTab] = useState("compare");
   const reg = r.rec;
-  const net = reg==="old"?r.oldTotal:r.newTotal;
-  const pay = reg==="old"?r.oldPayable:r.newPayable;
-  const ref = reg==="old"?r.oldRefund:r.newRefund;
 
   return (
     <Page title={"Results - " + r.itrForm}>
@@ -1213,7 +1210,7 @@ function CopyModal({ title, content, onClose }) {
     const t = document.createElement("textarea");
     t.value = content; t.style.cssText="position:fixed;opacity:0";
     document.body.appendChild(t); t.select();
-    try { document.execCommand("copy"); setCopied(true); setTimeout(()=>setCopied(false),2000); } catch {}
+    try { document.execCommand("copy"); setCopied(true); setTimeout(()=>setCopied(false),2000); } catch { /* clipboard unavailable - user can still select text manually */ }
     document.body.removeChild(t);
   };
   return (
