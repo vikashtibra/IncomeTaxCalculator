@@ -634,7 +634,7 @@ function TOSScreen({ setF, data, goNext }) {
           ["1. Reference Tool Only","This tool is for reference only. It does NOT constitute professional tax or legal advice. Verify all results with a qualified Chartered Accountant before filing."],
           ["2. No Liability","The platform disclaims ALL liability for incorrect calculations, tax demand notices, penalties, ITR rejection, or any financial loss from using this tool."],
           ["3. Resident Individuals Only","This tool is ONLY for Resident Individuals. It EXCLUDES: NRIs, HUFs, foreign assets/income, Crypto/VDA, companies, LLPs."],
-          ["4. Data Privacy","All data is stored locally on your device only. Nothing is sent to any server."],
+          ["4. Data Privacy","Your account uses Supabase for login. You can choose where your tax data itself is stored, in Profile settings: Local mode keeps it only on this device, never sent to any server. Cloud mode syncs it to your account, encrypted in your browser with a key derived from your password before it's sent - even a compromised database can't read it without your password."],
           ["5. JSON Utility File","The exported JSON is a reference payload only. Verify against the official utility at incometax.gov.in before uploading."],
           ["6. Tax Law Changes","While this covers FY 2025-26 rules, always consult incometax.gov.in for current provisions."],
         ].map(([h,b]) => (
@@ -744,7 +744,7 @@ function AuthScreen({ importSession, onAuth }) {
           </div>
         )}
         <div style={{textAlign:"center",fontSize:11,color:"#94a3b8",marginTop:12,padding:"8px",background:"#F8FAFC",borderRadius:8}}>
-          Data stored locally on this device only
+          Choose Local-only or encrypted Cloud storage after signing in, in Profile settings
         </div>
       </div>
     </Page>
