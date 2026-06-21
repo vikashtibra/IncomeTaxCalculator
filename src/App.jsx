@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import { extractPdfText, parseForm16 } from "./lib/parseForm16";
+import { randomB64, deriveKey, generateDataKey, exportKeyB64, importDataKey, wrapKey, unwrapKey, encryptJSON, decryptJSON } from "./lib/crypto";
 
 // -- TAX ENGINE FY 2025-26 / AY 2026-27 -------------------------------------
 const OLD_SLABS = [
@@ -225,13 +226,47 @@ export default function App() {
   const [modal, setModal]   = useState(null); // { type, title, content }
   const [pasteModal, setPasteModal] = useState(false);
   const [form16, setForm16] = useState(null); // { empIndex, fields, warnings, unreadable }
+  const [encKey, setEncKey] = useState(null); // CryptoKey (DK), cloud mode only
+  const [needsUnlock, setNeedsUnlock] = useState(false);
 
   const userToAuth = u => u && { id: u.id, email: u.email, name: u.user_metadata?.name || "" };
+  const showToast = msg => { setToast(msg); setTimeout(() => setToast(""), 2500); };
+
+  const getStorageMode = id => (id && localStorage.getItem("storage_mode_"+id)) || "cloud";
+  const setStorageMode = (id, mode) => localStorage.setItem("storage_mode_"+id, mode);
+
+  // Generates a Data Key on first use, or unwraps the existing one using the password. Caches DK in sessionStorage for this tab.
+  const unlockDataKey = async (userId, password) => {
+    const cached = sessionStorage.getItem("enc_dk_"+userId);
+    if (cached) { setEncKey(await importDataKey(cached)); setNeedsUnlock(false); return; }
+    if (!password) { setNeedsUnlock(true); return; }
+    try {
+      const { data: row } = await supabase.from("user_keys").select("*").eq("user_id", userId).maybeSingle();
+      let dk;
+      if (row) {
+        const pk = await deriveKey(password, row.salt);
+        dk = await unwrapKey(row.wrapped_dk, row.iv, pk);
+      } else {
+        dk = await generateDataKey();
+        const salt = randomB64();
+        const pk = await deriveKey(password, salt);
+        const { wrapped, iv } = await wrapKey(dk, pk);
+        await supabase.from("user_keys").upsert({ user_id: userId, salt, wrapped_dk: wrapped, iv });
+      }
+      sessionStorage.setItem("enc_dk_"+userId, await exportKeyB64(dk));
+      setEncKey(dk);
+      setNeedsUnlock(false);
+    } catch {
+      showToast("Incorrect password - couldn't unlock your encrypted data.");
+      setNeedsUnlock(true);
+    }
+  };
 
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setAuth(userToAuth(session?.user));
+      if (session?.user && getStorageMode(session.user.id) === "cloud") await unlockDataKey(session.user.id, null);
       setReady(true);
     })();
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -242,24 +277,44 @@ export default function App() {
 
   useEffect(() => {
     if (!auth) return;
+    const mode = getStorageMode(auth.id);
     (async () => {
+      if (mode === "local") {
+        try {
+          const raw = localStorage.getItem("itr_data_"+auth.id);
+          if (raw) setData(prev => ({ ...mkState(), ...JSON.parse(raw) }));
+        } catch { /* no saved data yet */ }
+        setStep("profile");
+        return;
+      }
+      if (!encKey) { setStep("profile"); return; } // wait for unlock
       try {
         const { data: row } = await supabase.from("tax_data").select("data").eq("user_id", auth.id).maybeSingle();
-        if (row && row.data) setData(prev => ({ ...mkState(), ...row.data }));
-      } catch { /* no saved data yet */ }
+        if (row && row.data) {
+          const payload = row.data.iv ? await decryptJSON(encKey, row.data) : row.data; // legacy plaintext fallback
+          setData(prev => ({ ...mkState(), ...payload }));
+        }
+      } catch (e) {
+        showToast("Couldn't decrypt saved data: " + (e && e.message ? e.message : "unknown error"));
+      }
       setStep("profile");
     })();
-  }, [auth]);
-
-  const showToast = msg => { setToast(msg); setTimeout(() => setToast(""), 2500); };
+  }, [auth, encKey]);
 
   const saveSession = async (d, silent) => {
     if (!auth) return;
+    const mode = getStorageMode(auth.id);
     try {
-      const { error } = await supabase.from("tax_data").upsert({
-        user_id: auth.id, data: d || data, updated_at: new Date().toISOString(),
-      });
-      if (error) throw error;
+      if (mode === "local") {
+        localStorage.setItem("itr_data_"+auth.id, JSON.stringify(d || data));
+      } else {
+        if (!encKey) { setNeedsUnlock(true); return; }
+        const payload = await encryptJSON(encKey, d || data);
+        const { error } = await supabase.from("tax_data").upsert({
+          user_id: auth.id, data: payload, updated_at: new Date().toISOString(),
+        });
+        if (error) throw error;
+      }
       if (!silent) showToast("Saved");
     } catch (e) {
       showToast("Save failed: " + (e && e.message ? e.message : "unknown error"));
@@ -402,7 +457,11 @@ export default function App() {
   if (!ready) return <Loading />;
 
   const isAuthStep = step === "tos" || step === "auth";
-  const P = { data, setF, setEmp, r, goNext, goPrev, goTo, auth, setAuth, saveSession, showToast, exportSession, setPasteModal, uploadForm16 };
+  const onAuth = async password => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user && getStorageMode(session.user.id) === "cloud") await unlockDataKey(session.user.id, password);
+  };
+  const P = { data, setF, setEmp, r, goNext, goPrev, goTo, auth, setAuth, saveSession, showToast, exportSession, setPasteModal, uploadForm16, onAuth, getStorageMode, setStorageMode, encKey, unlockDataKey };
 
   return (
     <div style={S.app}>
@@ -459,7 +518,7 @@ export default function App() {
 
       <main style={S.main}>
         {step==="tos"     && <TOSScreen     {...P} />}
-        {step==="auth"    && <AuthScreen    {...P} importSession={importSession} />}
+        {step==="auth"    && <AuthScreen    {...P} importSession={importSession} onAuth={onAuth} />}
         {step==="profile" && <ProfileScreen {...P} />}
         {step==="salary"  && <SalaryScreen  {...P} />}
         {step==="house"   && <HouseScreen   {...P} />}
@@ -501,6 +560,13 @@ export default function App() {
           onApply={values => applyForm16(form16.empIndex, values)}
         />
       )}
+
+      {auth && needsUnlock && !encKey && (
+        <UnlockModal
+          onSubmit={async password => { await unlockDataKey(auth.id, password); }}
+          onLogout={async () => { await supabase.auth.signOut(); setNeedsUnlock(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -537,7 +603,7 @@ function TOSScreen({ setF, data, goNext }) {
   );
 }
 
-function AuthScreen({ importSession }) {
+function AuthScreen({ importSession, onAuth }) {
   const [mode, setMode]   = useState("login");
   const [name, setName]   = useState("");
   const [email, setEmail] = useState("");
@@ -563,6 +629,7 @@ function AuthScreen({ importSession }) {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) { setErr(error.message); return; }
+        await onAuth(pass);
       }
     } catch (e) {
       setErr("Auth error: " + (e && e.message ? e.message : "please try again"));
@@ -615,11 +682,17 @@ function AuthScreen({ importSession }) {
   );
 }
 
-function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast, saveSession }) {
+function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToast, saveSession, getStorageMode, setStorageMode }) {
   const pan = data.profile.pan;
   const ifsc = data.profile.ifsc;
   const panOk  = !pan  || /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan);
   const ifscOk = !ifsc || /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc);
+  const storageMode = auth ? getStorageMode(auth.id) : "cloud";
+  const switchMode = mode => {
+    setStorageMode(auth.id, mode);
+    showToast(mode==="cloud" ? "Switched to Cloud (encrypted) - reloading..." : "Switched to Local-only storage - reloading...");
+    setTimeout(() => window.location.reload(), 800);
+  };
   return (
     <Page title="Profile">
       <Card title="Personal Details">
@@ -640,6 +713,19 @@ function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToa
       <Card title="ITR Eligibility">
         <Tog label="I am a Director in any company (ITR-2 required)" on={!!data.profile.isDirector} onChange={v=>setF("profile.isDirector",v)} />
         <Tog label="I hold unlisted equity shares (ITR-2 required)" on={!!data.profile.hasUnlisted} onChange={v=>setF("profile.hasUnlisted",v)} />
+      </Card>
+      <Card title="Data Storage">
+        <Tog label="Store data in the Cloud (encrypted with your password, syncs across devices)"
+          on={storageMode==="cloud"} onChange={v=>switchMode(v?"cloud":"local")} />
+        {storageMode==="local" ? (
+          <p style={{fontSize:12,color:"#718096",margin:0}}>
+            Local mode: your tax data stays only in this browser and is never sent to the server. It will be lost if you clear browser data, switch browsers, or use another device. Login is still required, but only for your account identity.
+          </p>
+        ) : (
+          <p style={{fontSize:12,color:"#718096",margin:0}}>
+            Cloud mode: your data is encrypted in this browser with a key derived from your password before it's ever sent to the server - even a compromised database or Supabase account can't read it without your password. On a new browser/tab you'll be asked for your password once to unlock it.
+          </p>
+        )}
       </Card>
       <Card title="Offline Backup">
         <p style={{fontSize:12,color:"#718096",margin:"0 0 10px"}}>
@@ -1129,6 +1215,39 @@ function Form16ReviewModal({ form16, onClose, onApply }) {
             Apply to Salary
           </button>
           <button style={{flex:1,background:"#F1F5F9",color:"#718096",border:"1px solid #E2E8F0",borderRadius:10,padding:"11px 4px",fontWeight:600,fontSize:11,cursor:"pointer"}} onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UnlockModal({ onSubmit, onLogout }) {
+  const [pass, setPass] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!pass) return;
+    setBusy(true);
+    await onSubmit(pass);
+    setBusy(false);
+  };
+  return (
+    <div style={S.overlay}>
+      <div style={S.modalBox} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px 10px",borderBottom:"1px solid #E2E8F0"}}>
+          <div style={{fontWeight:800,fontSize:15}}>Unlock Your Data</div>
+        </div>
+        <div style={{padding:"10px 14px",background:"#EFF6FF",borderBottom:"1px solid #BFDBFE",fontSize:12,color:"#1D4ED8",lineHeight:1.6}}>
+          Your saved tax data is encrypted. Enter your account password to unlock it in this browser tab.
+        </div>
+        <div style={{padding:"14px"}}>
+          <FIn label="Password" type="password" value={pass} onChange={setPass} placeholder="Your account password" onEnter={submit} />
+        </div>
+        <div style={{display:"flex",gap:8,padding:"10px 14px",borderTop:"1px solid #E2E8F0"}}>
+          <button style={{flex:2,background:"#1B4FD8",color:"#fff",border:"none",borderRadius:10,padding:"11px 8px",fontWeight:700,fontSize:13,cursor:"pointer"}}
+            onClick={submit} disabled={busy}>
+            {busy?"Unlocking...":"Unlock"}
+          </button>
+          <button style={{flex:1,background:"#F1F5F9",color:"#718096",border:"1px solid #E2E8F0",borderRadius:10,padding:"11px 4px",fontWeight:600,fontSize:11,cursor:"pointer"}} onClick={onLogout}>Logout</button>
         </div>
       </div>
     </div>
