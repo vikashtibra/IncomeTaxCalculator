@@ -641,13 +641,13 @@ function ProfileScreen({ data, setF, exportSession, setPasteModal, auth, showToa
         <Tog label="I am a Director in any company (ITR-2 required)" on={!!data.profile.isDirector} onChange={v=>setF("profile.isDirector",v)} />
         <Tog label="I hold unlisted equity shares (ITR-2 required)" on={!!data.profile.hasUnlisted} onChange={v=>setF("profile.hasUnlisted",v)} />
       </Card>
-      <Card title="Multi-Device Transfer">
+      <Card title="Offline Backup">
         <p style={{fontSize:12,color:"#718096",margin:"0 0 10px"}}>
-          To move your data to another device: click Backup, copy the full JSON text, open the app on the new device, click Restore on the login screen and paste it.
+          Your data already syncs to your account automatically - this is just for keeping your own copy. Click Backup to copy a JSON snapshot you can save as a file or note for your own records (e.g. in case you ever lose account access). To bring it back in later, log in to this account and click Restore.
         </p>
         <div style={{display:"flex",gap:8}}>
-          <button style={{...S.btnPri,flex:1,fontSize:13}} onClick={exportSession}>Backup Session</button>
-          <button style={{...S.btnSec,flex:1,fontSize:13}} onClick={()=>setPasteModal("import")}>Restore Session</button>
+          <button style={{...S.btnPri,flex:1,fontSize:13}} onClick={exportSession}>Backup to File</button>
+          <button style={{...S.btnSec,flex:1,fontSize:13}} onClick={()=>setPasteModal("import")}>Restore from File</button>
         </div>
       </Card>
       {auth && (
