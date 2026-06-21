@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
 import { extractPdfText, parseForm16 } from "./lib/parseForm16";
 import { randomB64, deriveKey, generateDataKey, exportKeyB64, importDataKey, wrapKey, unwrapKey, encryptJSON, decryptJSON } from "./lib/crypto";
+import { Analytics } from "@vercel/analytics/react";
 
 // -- TAX ENGINE FY 2025-26 / AY 2026-27 -------------------------------------
 const OLD_SLABS = [
@@ -621,6 +622,7 @@ export default function App() {
       {recovery && (
         <SetNewPasswordModal onSubmit={submitRecoveryPassword} />
       )}
+      <Analytics />
     </div>
   );
 }
