@@ -37,6 +37,7 @@ npm run lint
 
 ## Documentation
 
+- [HLD.md](HLD.md) — architecture, data model, key flows (encryption, save/load, password recovery, Form 16 parsing), security model
 - [HOWTO.md](HOWTO.md) — setup, Supabase configuration, deployment to Vercel
 - [ITR_RULES_COVERED.md](ITR_RULES_COVERED.md) — exact tax rules, slabs, and limits implemented in the calculator
 
