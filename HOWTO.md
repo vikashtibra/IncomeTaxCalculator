@@ -72,7 +72,7 @@ If you change env vars after the first deploy, trigger a **Redeploy** — they'r
 5. Fill **Property / Capital Gains / Business / Other Income / Deductions / TDS** as applicable.
 6. **Results** → see the Old vs New regime comparison, breakdown, and step-by-step filing guide. Export a **Tax Report** (plain text) or **ITR JSON** (reference payload) via copy-to-clipboard.
 7. Click **Save** anytime, or rely on autosave (triggers on Next / step-tab navigation / logout).
-8. **Backup**/**Restore** (Profile or header) — a manual JSON snapshot for your own records, independent of cloud sync. Restoring requires being logged in first.
+8. **Backup**/**Restore** (header) — a manual JSON snapshot for your own records, independent of cloud sync. Restoring requires being logged in first. **Logout** is also in the header.
 
 ## 6. Changing/resetting your password (Cloud mode)
 
